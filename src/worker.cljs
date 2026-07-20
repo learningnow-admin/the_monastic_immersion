@@ -21,7 +21,7 @@
    ["Comment only if moved to" "Sitting quietly with something is a full and valid response."]
    ["You won't love everything" "Someone else's taste will sometimes miss you completely. That's the deal."]
    ["No pretension" "A meme is as welcome as a sonnet. \"I don't know why but I liked it\" is a perfectly good thing to say."]
-   ["Bring your own snacks" "If you want snacks, you bring them yourself."]])
+   ["Nothing to prepare" "Just turn up. If you feel like a snack, bring one along."]])
 
 (def err-messages
   {"title"  "The artifact needs a title."
