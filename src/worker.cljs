@@ -443,7 +443,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         (mapv (fn [_] [:li {:class "artifact-row empty"} "awaiting an offering"])
               (vec (.fill (js/Array. (- quorum n)) 0))))
       (when (and (< (max n quorum) slots) (not= "done" (:status session)))
-        (mapv (fn [_] [:li {:class "artifact-row empty bonus"} "a bonus offering, if moved to"])
+        (mapv (fn [_] [:li {:class "artifact-row empty bonus"} "awaiting an offering (bonus)"])
               (vec (.fill (js/Array. (- slots (max n quorum))) 0))))]
      (when (and (< n slots) (< mine (allowance member)) (not= "done" (:status session)))
        [:form {:class "offer" :method "post" :action (action token "artifact")}
