@@ -33,12 +33,14 @@
    ["Nothing to prepare" "Just turn up. If you feel like a snack, bring one along."]])
 
 (def procedure
-  [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to set a day; anything past three is a bonus. One share each per session, two for a shared seat."]
-   ["Find a day" "Propose days and mark the ones you can make, any time. Each new session starts with a day about a month out already on the table. Once three artifacts are in, anyone can set the day."]
-   ["Someone offers to host" "First to click it has it. If nobody does, we land at Nina's."]
-   ["Bring it" "Whoever added it is responsible for bringing it or making sure it's there and ready. You can introduce it if you like, but you don't have to give any background at all."]
-   ["Read it, play it, or show it" nil]
-   ["Sit with it" "Once it's finished, anyone who wants to can make a comment, and anyone who doesn't can simply sit with it."]])
+  [["The set up"
+    [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to make a meeting; anything past three is a bonus. One share each per session, two for a shared seat."]
+     ["Find a day" "Propose days any time and mark the ones you can make. Each new session starts with a day about a month out already on the table."]
+     ["The day is set" "Once three artifacts are in, anyone can set the day, choosing one most people can make. Whoever offers first hosts; if nobody does, we land at Nina's."]]]
+   ["The meeting itself"
+    [["Bring it" "Whoever added an artifact makes sure it's there and ready. You can introduce it if you like, but you don't have to give any background at all."]
+     ["Read it, play it, or show it" nil]
+     ["Sit with it" "Once it's finished, anyone who wants to can make a comment, and anyone who doesn't can simply sit with it."]]]])
 
 (def influences
   [["From the Quakers" "They sit in silence and speak only if moved to. Having an opinion is optional; looking at the thing is enough. You don't owe the room a take, but if something does move you to speak, you speak, and a conversation happens."]
@@ -321,6 +323,10 @@ summary::before { content: '❧  '; color: var(--rubric); letter-spacing: normal
 summary::-webkit-details-marker { display: none; }
 details > *:not(summary) { margin-top: 1rem; }
 
+.proc-part {
+  margin-top: 1.5rem; color: var(--rubric);
+  font-variant: small-caps; letter-spacing: .08em;
+}
 ol.rule-list { padding-left: 1.4rem; }
 ol.rule-list li { margin-top: .8rem; }
 ol.rule-list li::marker { color: var(--rubric); }
@@ -521,17 +527,25 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
          [:input {:type "date" :id "new-date" :name "date" :required true}]
          [:button {} "Propose"]]])]))
 
+(defn pair-li [pair]
+  [:li [:span (nth pair 0) ". "]
+   (when (nth pair 1)
+     [:span {:class "rule-why"} (nth pair 1)])])
+
 (defn pair-list-section [title pairs]
   [:details
    [:summary title]
    [:ol {:class "rule-list"}
-    (mapv (fn [pair]
-            [:li [:span (nth pair 0) ". "]
-             (when (nth pair 1)
-               [:span {:class "rule-why"} (nth pair 1)])])
-          pairs)]])
+    (mapv pair-li pairs)]])
 
-(defn procedure-section [] (pair-list-section "The Procedure" procedure))
+(defn procedure-section []
+  [:details
+   [:summary "The Procedure"]
+   (mapv (fn [part]
+           [[:p {:class "proc-part"} (nth part 0)]
+            [:ol {:class "rule-list"}
+             (mapv pair-li (nth part 1))]])
+         procedure)])
 (defn rules-section [] (pair-list-section "The Rules" rules))
 (defn influences-section [] (pair-list-section "Influences" influences))
 
