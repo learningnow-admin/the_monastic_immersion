@@ -9,6 +9,8 @@
 
 (def meeting-time "7:30 pm")
 
+(def meeting-place "Logan Falls")
+
 (def artifact-types
   ["Text" "Image" "Audio" "Video" "Performance" "Object" "Place" "Person"
    "Event" "Idea" "Game" "Other"])
@@ -18,7 +20,8 @@
    ["Silence during the piece" "It's a shared experience — protect the silence so everyone can actually meet it."]
    ["Comment only if moved to" "Sitting quietly with something is a full and valid response."]
    ["You won't love everything" "Someone else's taste will sometimes miss you completely. That's the deal."]
-   ["No pretension" "A meme is as welcome as a sonnet. \"I don't know why but I liked it\" is a perfectly good thing to say."]])
+   ["No pretension" "A meme is as welcome as a sonnet. \"I don't know why but I liked it\" is a perfectly good thing to say."]
+   ["Snacks are bring-your-own" "If you want snacks, you bring them yourself."]])
 
 (def err-messages
   {"title"  "The artifact needs a title."
@@ -405,15 +408,15 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
      [:div {:class "section-label"} "Finding a day"]
      (if scheduled?
        [:div {:class "locked"}
-        [:p "The four artifacts are gathered. We meet on"]
-        [:p {:class "day"} (str (date-label (:locked_date session)) " · " meeting-time)]
+        [:p "The five artifacts are gathered. We meet on"]
+        [:p {:class "day"} (str (date-label (:locked_date session)) " · " meeting-time " · " meeting-place)]
         [:div {:class "after"}
          [:form {:method "post" :action (action token "done")}
           [:button {} "The session happened"]]
          [:form {:method "post" :action (action token "unlock")}
           [:button {:class "quiet"} "reopen the vote"]]]]
        [[:p {:style "margin-top:1rem"}
-         (str "The four artifacts are gathered. Propose days; mark the ones you can make. We meet at " meeting-time ".")]
+         (str "The five artifacts are gathered. Propose days; mark the ones you can make. We meet at " meeting-time " at " meeting-place ".")]
         (if (zero? (count options))
           [:p {:class "notice"} "No days proposed yet — be the first."]
           (mapv (fn [o]
