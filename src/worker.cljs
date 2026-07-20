@@ -10,10 +10,8 @@
 (def meeting-time "7:30 pm")
 
 (def artifact-types
-  ["Word" "Phrase" "Quote" "Poem" "Story" "Essay" "Article" "Letter" "Speech"
-   "Photograph" "Painting" "Illustration" "Drawing" "Meme" "Comic" "Sculpture"
-   "Building" "Song" "Album" "Score" "Podcast" "Video" "Scene" "Dance"
-   "Recipe" "Map" "Object" "Game" "Other"])
+  ["Text" "Image" "Audio" "Video" "Performance" "Object" "Place" "Person"
+   "Event" "Idea" "Game" "Other"])
 
 (def rules
   [["Fifteen minutes, at most" "If it runs longer, bring an excerpt."]
