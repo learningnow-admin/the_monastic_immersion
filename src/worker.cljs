@@ -5,7 +5,7 @@
 
 ;; ---------------------------------------------------------------- config
 
-(def slots 4)
+(def slots 5)
 
 (def meeting-time "7:30 pm")
 
@@ -23,7 +23,7 @@
 (def err-messages
   {"title"  "The artifact needs a title."
    "dup"    "You have already added an artifact to this session."
-   "full"   "This session already has its four artifacts."
+   "full"   "This session already has its five artifacts."
    "closed" "This session is not collecting artifacts right now."
    "date"   "That date didn't look right — pick it from the calendar."
    "phase"  "That action doesn't fit the session's current phase."})
