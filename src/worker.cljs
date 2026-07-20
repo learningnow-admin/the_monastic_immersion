@@ -225,6 +225,13 @@ h1 {
 
 .staff { display: block; margin: 2.4rem auto 0; width: 100%; max-width: 21rem; }
 
+.meet-banner {
+  text-align: center; margin-top: 2rem; padding: .8rem 0;
+  border-top: 1px solid var(--gilt); border-bottom: 1px solid var(--gilt);
+  color: var(--gilt); font-size: 1.15rem;
+  font-variant: small-caps; letter-spacing: .06em;
+}
+
 section { margin-top: 3rem; }
 .section-label {
   color: var(--rubric);
@@ -584,6 +591,9 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
            (status-line session artifacts)
            [:p {:class "identity"} "Reading as " [:b member]]
            (staff-svg artifacts scheduled?)
+           (when scheduled?
+             [:p {:class "meet-banner"}
+              (str (date-label (:locked_date session)) " · " meeting-time " · " (place-for session))])
            (artifact-section session artifacts err member token)
            (scheduling-section session artifacts (:options data) (:votes data) (:members data) member token)
            (procedure-section)
