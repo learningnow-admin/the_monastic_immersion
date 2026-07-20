@@ -5,11 +5,13 @@
 
 ;; ---------------------------------------------------------------- config
 
-(def slots 5)
+(def slots 4)   ;; most artifacts a session can hold (one per seat; Otto & Cass share one)
+
+(def quorum 3)  ;; artifacts needed before a day can be set
 
 (def meeting-time "7:30 pm")
 
-(def meeting-place "Logan Falls")
+(def meeting-place "Nina's house")
 
 (def artifact-types
   ["Text" "Image" "Audio" "Video" "Performance" "Object" "Place" "Person"
@@ -23,10 +25,28 @@
    ["No pretension" "A meme is as welcome as a sonnet. \"I don't know why but I liked it\" is a perfectly good thing to say."]
    ["Nothing to prepare" "Just turn up. If you feel like a snack, bring one along."]])
 
+(def procedure
+  [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to set a day; anything past three is a bonus. One share each per session."]
+   ["Find a day" "Propose days and mark the ones you can make, any time. Each new session starts with a day about a month out already on the table. Once three artifacts are in, anyone can set the day."]
+   ["Someone offers to host" "First to click it has it. If nobody does, we land at Nina's."]
+   ["Bring it" "Whoever added it is responsible for bringing it or making sure it's there and ready. You can introduce it if you like, but you don't have to give any background at all."]
+   ["Read it, play it, or show it" nil]
+   ["Sit with it" "Once it's finished, anyone who wants to can make a comment, and anyone who doesn't can simply sit with it."]])
+
+(def influences
+  [["From the Quakers" "They sit in silence and speak only if moved to. Having an opinion is optional; looking at the thing is enough. You don't owe the room a take, but if something does move you to speak, you speak, and a conversation happens."]
+   ["From D&D" "The artifact is a provocation: a shared starting point that opens up conversations that go somewhere different than the usual ones."]
+   ["S for Social" "From the FASE reading in Doug Lemov's Teach Like a Champion: consuming media together as a genuinely shared experience rather than alone. That shared moment is the engine of the whole thing."]
+   ["Object meditation" "Meditating on a single object for some time."]
+   ["A friend's movie night" "They would pick a random and potentially boring movie, and the rule was you could only say nice things about it."]
+   ["Timeful Texts" [:span "An essay on texts that unfold over time. " [:a {:href "https://numinous.productions/timeful/"} "numinous.productions/timeful"]]]
+   ["Harry Potter and the Sacred Text" "A podcast that reads the novels slowly and contemplatively, treating them as sacred scripture, to find deeper meaning in life's big questions."]
+   ["Low-effort catching up" "A way of seeing each other that does not require too much effort."]])
+
 (def err-messages
   {"title"  "The artifact needs a title."
    "dup"    "You have already added an artifact to this session."
-   "full"   "This session already has its five artifacts."
+   "full"   "This session already has all its artifacts."
    "closed" "This session is not collecting artifacts right now."
    "date"   "That date didn't look right. Pick it from the calendar."
    "phase"  "That action doesn't fit the session's current phase."})
@@ -134,7 +154,7 @@
         artifacts (js-await (q-all db "SELECT * FROM artifacts WHERE session_id = ? ORDER BY id" [(:id session)]))
         options (js-await (q-all db "SELECT * FROM date_options WHERE session_id = ? ORDER BY date" [(:id session)]))
         votes (js-await (q-all db "SELECT v.option_id, v.member, v.answer FROM votes v JOIN date_options o ON v.option_id = o.id WHERE o.session_id = ?" [(:id session)]))
-        past (js-await (q-all db "SELECT s.number, s.locked_date, a.title, a.type, a.member FROM sessions s LEFT JOIN artifacts a ON a.session_id = s.id WHERE s.status = 'done' ORDER BY s.number DESC, a.id" nil))]
+        past (js-await (q-all db "SELECT s.number, s.locked_date, s.host, a.title, a.type, a.member FROM sessions s LEFT JOIN artifacts a ON a.session_id = s.id WHERE s.status = 'done' ORDER BY s.number DESC, a.id" nil))]
     {:session session
      :members (mapv (fn [m] (:name m)) members)
      :artifacts artifacts
@@ -269,6 +289,9 @@ button.quiet:hover { background: transparent; color: var(--rubric); }
 .vote-actions button.current { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .propose { display: flex; margin-top: 1.3rem; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
 
+.host-line { display: flex; align-items: baseline; gap: .6rem; margin-top: .7rem; color: var(--faint); }
+.host-line span { color: var(--ink); font-style: italic; }
+
 .locked { margin-top: 1.4rem; }
 .locked .day { color: var(--gilt); font-size: 1.25rem; }
 .locked .after { display: flex; gap: 1rem; margin-top: 1.2rem; align-items: center; }
@@ -288,6 +311,7 @@ ol.rule-list li { margin-top: .8rem; }
 ol.rule-list li::marker { color: var(--rubric); }
 .rule-why { color: var(--faint); font-size: .95rem; }
 
+.host-tally { color: var(--faint); font-size: .9rem; font-style: italic; }
 .past-session { margin-top: 1.6rem; }
 .past-head { font-variant: small-caps; letter-spacing: .06em; }
 .past-head .past-date { color: var(--faint); font-variant: normal; font-style: italic; }
@@ -319,10 +343,13 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
    [:style ["raw" css]]])
 
 (defn staff-svg
-  "Four-line chant staff; each artifact is a neume, pitch drawn from its title."
+  "Four-line chant staff; each artifact is a neume, pitch drawn from its title.
+   Three positions are always drawn (the quorum); bonus artifacts extend the line."
   [artifacts scheduled?]
-  (let [line-ys [16 28 40 52]
-        x-step (js/Math.round (/ 228 (max 1 (dec slots))))
+  (let [n (count artifacts)
+        shown (max quorum n)
+        line-ys [16 28 40 52]
+        x-step (js/Math.round (/ 228 (max 1 (dec shown))))
         x-for (fn [i] (+ 46 (* i x-step)))
         neume (fn [i a]
                 (let [x (x-for i)
@@ -334,29 +361,48 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                 [:rect {:x (x-for i) :y 29 :width 10 :height 10
                         :fill "none" :stroke "var(--rule)" :stroke-width 1}])]
     [:svg {:class "staff" :viewBox "0 0 320 68" :role "img"
-           :aria-label (str (count artifacts) " of " slots " artifacts gathered")}
+           :aria-label (if (< n quorum)
+                         (str n " of " quorum " artifacts gathered")
+                         (str n " artifacts gathered; a day can be set"))}
      (mapv (fn [y] [:line {:x1 8 :y1 y :x2 312 :y2 y
                            :stroke "var(--rule)" :stroke-width 1}])
            line-ys)
      [:path {:d "M14 14 v40 M18 14 v40" :stroke "var(--rubric)" :stroke-width 2 :fill "none"}]
      (mapv (fn [i]
-             (if (< i (count artifacts))
+             (if (< i n)
                (neume i (nth artifacts i))
                (ghost i)))
-           (vec (range slots)))
-     (when (>= (count artifacts) slots)
+           (vec (range shown)))
+     (when (>= n quorum)
        [:path {:d "M300 30 l8 8 l-8 8" :stroke (if scheduled? "var(--gilt)" "var(--ink)")
                :stroke-width 1.5 :fill "none"}])]))
 
 (defn action [token path]
   (str "/m/" token "/" path))
 
+(defn place-for [session]
+  (if (:host session) (str (:host session) "'s house") meeting-place))
+
+(defn host-line [session member token]
+  (let [host (:host session)]
+    [:div {:class "host-line"}
+     (if host
+       [[:span (str host " hosts.")]
+        (when (= member host)
+          [:form {:method "post" :action (action token "host/delete")}
+           [:button {:class "quiet"} "step down"]])]
+       [:form {:method "post" :action (action token "host")}
+        [:button {:class "quiet"} "Offer to host · first to click has it"]])]))
+
 (defn artifact-section [session artifacts err member token]
   (let [n (count artifacts)
         collecting? (= "collecting" (:status session))
         offered? (pos? (count (filterv (fn [a] (= member (:member a))) artifacts)))]
     [:section
-     [:div {:class "section-label"} (str "Artifacts · " n " of " slots)]
+     [:div {:class "section-label"}
+      (if (< n quorum)
+        (str "Artifacts · " n " of " quorum)
+        (str "Artifacts · " n " gathered"))]
      (when err [:p {:class "notice"} err])
      [:ol {:class "artifacts"}
       (mapv (fn [a]
@@ -369,10 +415,12 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                   [:input {:type "hidden" :name "id" :value (:id a)}]
                   [:button {:class "quiet" :aria-label "Withdraw this artifact"} "withdraw"]])])
             artifacts)
-      (when collecting?
+      (when (< n quorum)
         (mapv (fn [_] [:li {:class "artifact-row empty"} "awaiting an offering"])
-              (vec (.fill (js/Array. (- slots n)) 0))))]
-     (when (and collecting? (not offered?))
+              (vec (.fill (js/Array. (- quorum n)) 0))))
+      (when (and (>= n quorum) (< n slots) (not= "done" (:status session)))
+        [:li {:class "artifact-row empty"} "bonus offerings welcome, one each"])]
+     (when (and (< n slots) (not offered?) (not= "done" (:status session)))
        [:form {:class "offer" :method "post" :action (action token "artifact")}
         [:div {:class "row"}
          [:input {:type "text" :name "title" :placeholder "Title" :required true
@@ -404,25 +452,28 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
    [:input {:type "hidden" :name "answer" :value answer}]
    [:button {:class (when current? "current")} label]])
 
-(defn scheduling-section [session options votes members member token]
+(defn scheduling-section [session artifacts options votes members member token]
   (let [scheduled? (= "scheduled" (:status session))
-        collecting? (= "collecting" (:status session))]
+        n (count artifacts)
+        quorate? (>= n quorum)]
     [:section
      [:div {:class "section-label"} "Finding a day"]
      (if scheduled?
        [:div {:class "locked"}
-        [:p "The five artifacts are gathered. We meet on"]
-        [:p {:class "day"} (str (date-label (:locked_date session)) " · " meeting-time " · " meeting-place)]
+        [:p "The artifacts are gathered. We meet on"]
+        [:p {:class "day"} (str (date-label (:locked_date session)) " · " meeting-time " · " (place-for session))]
+        (host-line session member token)
         [:div {:class "after"}
          [:form {:method "post" :action (action token "done")}
           [:button {} "The session happened"]]
          [:form {:method "post" :action (action token "unlock")}
           [:button {:class "quiet"} "reopen the vote"]]]]
        [[:p {:style "margin-top:1rem"}
-         (str (if collecting?
-                "Propose days while the artifacts gather; mark the ones you can make."
-                "The five artifacts are gathered. Propose days; mark the ones you can make.")
-              " We meet at " meeting-time " at " meeting-place ".")]
+         (str (if quorate?
+                "Enough artifacts are gathered; a day can be set. Mark the ones you can make."
+                (str "Propose days while the artifacts gather; " quorum " artifacts open the setting of a day."))
+              " We meet at " meeting-time " at " (place-for session) ".")]
+        (host-line session member token)
         (if (zero? (count options))
           [:p {:class "notice"} "No days proposed yet. Be the first."]
           (mapv (fn [o]
@@ -438,7 +489,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                       (vote-button token (:id o) "yes" "Can" (= "yes" my-answer))
                       (vote-button token (:id o) "maybe" "Maybe" (= "maybe" my-answer))
                       (vote-button token (:id o) "no" "Can't" (= "no" my-answer))
-                      (when-not collecting?
+                      (when quorate?
                         [:form {:method "post" :action (action token "lock") :style "margin-left:auto"}
                          [:input {:type "hidden" :name "option_id" :value (:id o)}]
                          [:button {:class "quiet"} (str "set this day · " yes-count " can")]])
@@ -451,14 +502,19 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
          [:input {:type "date" :id "new-date" :name "date" :required true}]
          [:button {} "Propose"]]])]))
 
-(defn rules-section []
+(defn pair-list-section [title pairs]
   [:details
-   [:summary "The Rules"]
+   [:summary title]
    [:ol {:class "rule-list"}
     (mapv (fn [pair]
             [:li [:span (nth pair 0) ". "]
-             [:span {:class "rule-why"} (nth pair 1)]])
-          rules)]])
+             (when (nth pair 1)
+               [:span {:class "rule-why"} (nth pair 1)])])
+          pairs)]])
+
+(defn procedure-section [] (pair-list-section "The Procedure" procedure))
+(defn rules-section [] (pair-list-section "The Rules" rules))
+(defn influences-section [] (pair-list-section "Influences" influences))
 
 (defn past-sessions [past]
   (when (pos? (count past))
@@ -469,9 +525,19 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                                   (do (aset acc k [row]) acc))))
                             {} past)
           numbers (.sort (js/Object.keys by-number)
-                         (fn [a b] (- (js/parseInt b 10) (js/parseInt a 10))))]
+                         (fn [a b] (- (js/parseInt b 10) (js/parseInt a 10))))
+          tally (reduce (fn [acc k]
+                          (let [h (:host (nth (aget by-number k) 0))]
+                            (when h (aset acc h (inc (or (aget acc h) 0))))
+                            acc))
+                        {} numbers)
+          tally-keys (js/Object.keys tally)]
       [:details
        [:summary "Past sessions"]
+       (when (pos? (count tally-keys))
+         [:p {:class "host-tally"}
+          (str "Hosted so far: "
+               (str/join " · " (mapv (fn [h] (str h " ×" (aget tally h))) tally-keys)))])
        (mapv (fn [k]
                (let [rows (aget by-number k)
                      first-row (nth rows 0)]
@@ -479,7 +545,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                   [:div {:class "past-head"}
                    (str "Session " (roman (js/parseInt k 10)) " ")
                    [:span {:class "past-date"}
-                    (when (:locked_date first-row) (date-label (:locked_date first-row)))]]
+                    (str (when (:locked_date first-row) (date-label (:locked_date first-row)))
+                         (when (:host first-row) (str " · at " (:host first-row) "'s")))]]
                   [:ul {:class "past-artifacts"}
                    (mapv (fn [r]
                            (when (:title r)
@@ -494,7 +561,9 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
     [:p {:class "session-line"}
      (str "Session " (roman (:number session)) " · ")
      (case status
-       "collecting" (str "gathering, " n " of " slots)
+       "collecting" (if (< n quorum)
+                      (str "gathering, " n " of " quorum)
+                      (str n " gathered · a day can be set"))
        "scheduling" "finding a day"
        "scheduled" [:span {:class "set-date"}
                     (str "meets " (date-label (:locked_date session)) ", " meeting-time)]
@@ -516,8 +585,10 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
            [:p {:class "identity"} "Reading as " [:b member]]
            (staff-svg artifacts scheduled?)
            (artifact-section session artifacts err member token)
-           (scheduling-section session (:options data) (:votes data) (:members data) member token)
+           (scheduling-section session artifacts (:options data) (:votes data) (:members data) member token)
+           (procedure-section)
            (rules-section)
+           (influences-section)
            (past-sessions (:past data))
            [:footer "We consume cultural artifacts together, in the same place, at the same time."]]]]))))
 
@@ -562,7 +633,6 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         type* (or (.get fd "type") "Other")
         session (js-await (current-session db))]
     (cond
-      (not= "collecting" (:status session)) (redirect url token "closed")
       (blank? title) (redirect url token "title")
       :else
       (let [dup (js-await (q-first db "SELECT id FROM artifacts WHERE session_id = ? AND member = ?"
@@ -577,7 +647,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
           (do
             (js-await (q-run db "INSERT INTO artifacts (session_id, member, title, type) VALUES (?, ?, ?, ?)"
                              [(:id session) member title type*]))
-            (when (= (inc n) slots)
+            (when (and (= "collecting" (:status session)) (= (inc n) slots))
               (js-await (q-run db "UPDATE sessions SET status = 'scheduling' WHERE id = ?"
                                [(:id session)])))
             (redirect url token)))))))
@@ -651,8 +721,12 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         option-id (.get fd "option_id")
         session (js-await (current-session db))
         opt (js-await (q-first db "SELECT * FROM date_options WHERE id = ? AND session_id = ?"
-                               [option-id (:id session)]))]
-    (if (or (not= "scheduling" (:status session)) (nil? opt))
+                               [option-id (:id session)]))
+        n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
+                                 [(:id session)]))]
+    (if (or (not (.includes ["collecting" "scheduling"] (:status session)))
+            (nil? opt)
+            (< (:n n-row) quorum))
       (redirect url token "phase")
       (do
         (js-await (q-run db "UPDATE sessions SET status = 'scheduled', locked_date = ? WHERE id = ?"
@@ -664,10 +738,28 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         session (js-await (current-session db))]
     (if (not= "scheduled" (:status session))
       (redirect url token "phase")
-      (do
-        (js-await (q-run db "UPDATE sessions SET status = 'scheduling', locked_date = NULL WHERE id = ?"
-                         [(:id session)]))
+      (let [n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
+                                     [(:id session)]))
+            status (if (>= (:n n-row) slots) "scheduling" "collecting")]
+        (js-await (q-run db "UPDATE sessions SET status = ?, locked_date = NULL WHERE id = ?"
+                         [status (:id session)]))
         (redirect url token)))))
+
+(defn ^:async post-host
+  "First to offer hosts: the WHERE host IS NULL makes the first click win."
+  [req env url member token]
+  (let [db (:DB env)
+        session (js-await (current-session db))]
+    (js-await (q-run db "UPDATE sessions SET host = ? WHERE id = ? AND host IS NULL"
+                     [member (:id session)]))
+    (redirect url token)))
+
+(defn ^:async post-host-delete [req env url member token]
+  (let [db (:DB env)
+        session (js-await (current-session db))]
+    (js-await (q-run db "UPDATE sessions SET host = NULL WHERE id = ? AND host = ?"
+                     [(:id session) member]))
+    (redirect url token)))
 
 (defn ^:async post-done [req env url member token]
   (let [db (:DB env)
@@ -678,6 +770,15 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         (js-await (q-run db "UPDATE sessions SET status = 'done' WHERE id = ?" [(:id session)]))
         (js-await (q-run db "INSERT INTO sessions (number, status) VALUES (?, 'collecting')"
                          [(inc (:number session))]))
+        ;; Seed the next session with a day four weeks on, so there is always
+        ;; a date on the table without anyone having to propose one.
+        (when (:locked_date session)
+          (let [next-row (js-await (q-first db "SELECT id FROM sessions WHERE number = ?"
+                                            [(inc (:number session))]))
+                d (js/Date. (str (:locked_date session) "T12:00:00Z"))]
+            (.setUTCDate d (+ (.getUTCDate d) 28))
+            (js-await (q-run db "INSERT OR IGNORE INTO date_options (session_id, date) VALUES (?, ?)"
+                             [(:id next-row) (.slice (.toISOString d) 0 10)]))))
         (redirect url token)))))
 
 ;; ---------------------------------------------------------------- router
@@ -714,6 +815,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
             "vote" (js-await (post-vote req env url member token))
             "lock" (js-await (post-lock req env url member token))
             "unlock" (js-await (post-unlock req env url member token))
+            "host" (js-await (post-host req env url member token))
+            "host/delete" (js-await (post-host-delete req env url member token))
             "done" (js-await (post-done req env url member token))
             (js/Response. "Not found" {:status 404}))
 
