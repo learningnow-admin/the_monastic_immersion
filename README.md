@@ -1,7 +1,8 @@
 # The Monastic Immersion
 
 A one-page web app for a small group that consumes cultural artifacts together.
-Each session gathers artifacts (one per seat, four at most); three are enough
+Each session gathers artifacts (one share per seat, two for the couple's
+shared seat, five at most); three are enough
 to lock a day, and anything past three is a bonus. Days can be proposed and
 voted on from the start. Whoever offers first hosts (default: Nina's house);
 meet (7:30 pm, always), mark it done, and the next session begins with a day
@@ -59,8 +60,8 @@ After that, updates are just `npm run deploy`.
 
 Tweakables in `src/worker.cljs`: `meeting-time`, `meeting-place` (the default
 when nobody offers to host), `slots` (most artifacts per session), `quorum`
-(artifacts needed to lock a day), `artifact-types`, `rules`, `procedure`,
-`influences`. Renaming a member touches three tables:
+(artifacts needed to lock a day), `shares` (per-seat allowance, for shared
+seats), `artifact-types`, `rules`, `procedure`, `influences`. Renaming a member touches three tables:
 
 ```sh
 npx wrangler d1 execute tmi --remote --command "UPDATE members SET name='NewName' WHERE name='Kai'; UPDATE artifacts SET member='NewName' WHERE member='Kai'; UPDATE votes SET member='NewName' WHERE member='Kai'"

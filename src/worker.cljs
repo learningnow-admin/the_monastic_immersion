@@ -5,9 +5,16 @@
 
 ;; ---------------------------------------------------------------- config
 
-(def slots 4)   ;; most artifacts a session can hold (one per seat; Otto & Cass share one)
+(def slots 5)   ;; most artifacts a session can hold
 
 (def quorum 3)  ;; artifacts needed before a day can be set
+
+(def shares
+  "How many artifacts each seat may add per session; one unless listed here."
+  {"Otto & Cass" 2})
+
+(defn allowance [member]
+  (or (get shares member) 1))
 
 (def meeting-time "7:30 pm")
 
@@ -26,7 +33,7 @@
    ["Nothing to prepare" "Just turn up. If you feel like a snack, bring one along."]])
 
 (def procedure
-  [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to set a day; anything past three is a bonus. One share each per session."]
+  [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to set a day; anything past three is a bonus. One share each per session, two for a shared seat."]
    ["Find a day" "Propose days and mark the ones you can make, any time. Each new session starts with a day about a month out already on the table. Once three artifacts are in, anyone can set the day."]
    ["Someone offers to host" "First to click it has it. If nobody does, we land at Nina's."]
    ["Bring it" "Whoever added it is responsible for bringing it or making sure it's there and ready. You can introduce it if you like, but you don't have to give any background at all."]
@@ -45,7 +52,7 @@
 
 (def err-messages
   {"title"  "The artifact needs a title."
-   "dup"    "You have already added an artifact to this session."
+   "dup"    "Your shares for this session are already in."
    "full"   "This session already has all its artifacts."
    "closed" "This session is not collecting artifacts right now."
    "date"   "That date didn't look right. Pick it from the calendar."
@@ -254,6 +261,7 @@ ol.artifacts { list-style: none; padding: 0; }
 }
 .artifact-row .a-member { margin-left: auto; color: var(--faint); font-size: .92rem; white-space: nowrap; }
 .artifact-row.empty { color: var(--faint); font-style: italic; }
+.artifact-row.empty.bonus { color: var(--gilt); opacity: .8; }
 
 form { margin: 0; }
 input[type=text], input[type=date], select {
@@ -354,9 +362,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
    Three positions are always drawn (the quorum); bonus artifacts extend the line."
   [artifacts scheduled?]
   (let [n (count artifacts)
-        shown (max quorum n)
         line-ys [16 28 40 52]
-        x-step (js/Math.round (/ 228 (max 1 (dec shown))))
+        x-step (js/Math.round (/ 228 (max 1 (dec slots))))
         x-for (fn [i] (+ 46 (* i x-step)))
         neume (fn [i a]
                 (let [x (x-for i)
@@ -365,11 +372,15 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                   [:rect {:x x :y (- y 5) :width 10 :height 10
                           :fill (if scheduled? "var(--gilt)" "var(--ink)")}]))
         ghost (fn [i]
-                [:rect {:x (x-for i) :y 29 :width 10 :height 10
-                        :fill "none" :stroke "var(--rule)" :stroke-width 1}])]
+                (let [bonus? (>= i quorum)]
+                  [:rect {:x (x-for i) :y 29 :width 10 :height 10
+                          :fill "none"
+                          :stroke (if bonus? "var(--gilt)" "var(--rule)")
+                          :stroke-dasharray (when bonus? "3 2")
+                          :stroke-width 1}]))]
     [:svg {:class "staff" :viewBox "0 0 320 68" :role "img"
            :aria-label (if (< n quorum)
-                         (str n " of " quorum " artifacts gathered")
+                         (str n " of " quorum " artifacts needed to meet")
                          (str n " artifacts gathered; a day can be set"))}
      (mapv (fn [y] [:line {:x1 8 :y1 y :x2 312 :y2 y
                            :stroke "var(--rule)" :stroke-width 1}])
@@ -379,7 +390,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
              (if (< i n)
                (neume i (nth artifacts i))
                (ghost i)))
-           (vec (range shown)))
+           (vec (range slots)))
      (when (>= n quorum)
        [:path {:d "M300 30 l8 8 l-8 8" :stroke (if scheduled? "var(--gilt)" "var(--ink)")
                :stroke-width 1.5 :fill "none"}])]))
@@ -404,12 +415,12 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
 (defn artifact-section [session artifacts err member token]
   (let [n (count artifacts)
         collecting? (= "collecting" (:status session))
-        offered? (pos? (count (filterv (fn [a] (= member (:member a))) artifacts)))]
+        mine (count (filterv (fn [a] (= member (:member a))) artifacts))]
     [:section
      [:div {:class "section-label"}
       (if (< n quorum)
-        (str "Artifacts · " n " of " quorum)
-        (str "Artifacts · " n " gathered"))]
+        (str "Artifacts · " n " of " quorum " needed to meet")
+        (str "Artifacts · " n " gathered · enough to meet"))]
      (when err [:p {:class "notice"} err])
      [:ol {:class "artifacts"}
       (mapv (fn [a]
@@ -425,9 +436,10 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
       (when (< n quorum)
         (mapv (fn [_] [:li {:class "artifact-row empty"} "awaiting an offering"])
               (vec (.fill (js/Array. (- quorum n)) 0))))
-      (when (and (>= n quorum) (< n slots) (not= "done" (:status session)))
-        [:li {:class "artifact-row empty"} "bonus offerings welcome, one each"])]
-     (when (and (< n slots) (not offered?) (not= "done" (:status session)))
+      (when (and (< (max n quorum) slots) (not= "done" (:status session)))
+        (mapv (fn [_] [:li {:class "artifact-row empty bonus"} "a bonus offering, if moved to"])
+              (vec (.fill (js/Array. (- slots (max n quorum))) 0))))]
+     (when (and (< n slots) (< mine (allowance member)) (not= "done" (:status session)))
        [:form {:class "offer" :method "post" :action (action token "artifact")}
         [:div {:class "row"}
          [:input {:type "text" :name "title" :placeholder "Title" :required true
@@ -478,7 +490,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
        [[:p {:style "margin-top:1rem"}
          (str (if quorate?
                 "Enough artifacts are gathered; a day can be set. Mark the ones you can make."
-                (str "Propose days while the artifacts gather; " quorum " artifacts open the setting of a day."))
+                (str "Propose days while the artifacts gather; at least " quorum " artifacts make a meeting."))
               " We meet at " meeting-time " at " (place-for session) ".")]
         (host-line session member token)
         (if (zero? (count options))
@@ -645,13 +657,13 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
     (cond
       (blank? title) (redirect url token "title")
       :else
-      (let [dup (js-await (q-first db "SELECT id FROM artifacts WHERE session_id = ? AND member = ?"
-                                   [(:id session) member]))
+      (let [mine-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ? AND member = ?"
+                                        [(:id session) member]))
             n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
                                      [(:id session)]))
             n (:n n-row)]
         (cond
-          dup (redirect url token "dup")
+          (>= (:n mine-row) (allowance member)) (redirect url token "dup")
           (>= n slots) (redirect url token "full")
           :else
           (do
