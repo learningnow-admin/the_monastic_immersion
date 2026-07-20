@@ -405,7 +405,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
    [:button {:class (when current? "current")} label]])
 
 (defn scheduling-section [session options votes members member token]
-  (let [scheduled? (= "scheduled" (:status session))]
+  (let [scheduled? (= "scheduled" (:status session))
+        collecting? (= "collecting" (:status session))]
     [:section
      [:div {:class "section-label"} "Finding a day"]
      (if scheduled?
@@ -418,7 +419,10 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
          [:form {:method "post" :action (action token "unlock")}
           [:button {:class "quiet"} "reopen the vote"]]]]
        [[:p {:style "margin-top:1rem"}
-         (str "The five artifacts are gathered. Propose days; mark the ones you can make. We meet at " meeting-time " at " meeting-place ".")]
+         (str (if collecting?
+                "Propose days while the artifacts gather; mark the ones you can make."
+                "The five artifacts are gathered. Propose days; mark the ones you can make.")
+              " We meet at " meeting-time " at " meeting-place ".")]
         (if (zero? (count options))
           [:p {:class "notice"} "No days proposed yet. Be the first."]
           (mapv (fn [o]
@@ -434,9 +438,10 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                       (vote-button token (:id o) "yes" "Can" (= "yes" my-answer))
                       (vote-button token (:id o) "maybe" "Maybe" (= "maybe" my-answer))
                       (vote-button token (:id o) "no" "Can't" (= "no" my-answer))
-                      [:form {:method "post" :action (action token "lock") :style "margin-left:auto"}
-                       [:input {:type "hidden" :name "option_id" :value (:id o)}]
-                       [:button {:class "quiet"} (str "set this day · " yes-count " can")]]
+                      (when-not collecting?
+                        [:form {:method "post" :action (action token "lock") :style "margin-left:auto"}
+                         [:input {:type "hidden" :name "option_id" :value (:id o)}]
+                         [:button {:class "quiet"} (str "set this day · " yes-count " can")]])
                       [:form {:method "post" :action (action token "dates/delete")}
                        [:input {:type "hidden" :name "option_id" :value (:id o)}]
                        [:button {:class "quiet" :aria-label "Remove this day"} "✕"]]]]))
@@ -511,8 +516,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
            [:p {:class "identity"} "Reading as " [:b member]]
            (staff-svg artifacts scheduled?)
            (artifact-section session artifacts err member token)
-           (when (or (= "scheduling" (:status session)) scheduled?)
-             (scheduling-section session (:options data) (:votes data) (:members data) member token))
+           (scheduling-section session (:options data) (:votes data) (:members data) member token)
            (rules-section)
            (past-sessions (:past data))
            [:footer "We consume cultural artifacts together, in the same place, at the same time."]]]]))))
@@ -601,7 +605,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         date (str (or (.get fd "date") ""))
         session (js-await (current-session db))]
     (cond
-      (not= "scheduling" (:status session)) (redirect url token "phase")
+      (not (.includes ["collecting" "scheduling"] (:status session))) (redirect url token "phase")
       (not (.test #"^\d{4}-\d{2}-\d{2}$" date)) (redirect url token "date")
       :else
       (do
@@ -614,7 +618,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         fd (js-await (.formData req))
         option-id (.get fd "option_id")
         session (js-await (current-session db))]
-    (if (not= "scheduling" (:status session))
+    (if (not (.includes ["collecting" "scheduling"] (:status session)))
       (redirect url token "phase")
       (do
         (js-await (q-run db "DELETE FROM votes WHERE option_id = ?" [option-id]))
@@ -629,7 +633,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         answer (.get fd "answer")
         session (js-await (current-session db))]
     (cond
-      (not= "scheduling" (:status session)) (redirect url token "phase")
+      (not (.includes ["collecting" "scheduling"] (:status session))) (redirect url token "phase")
       (not (.includes ["yes" "maybe" "no"] answer)) (redirect url token "phase")
       :else
       (let [opt (js-await (q-first db "SELECT id FROM date_options WHERE id = ? AND session_id = ?"
