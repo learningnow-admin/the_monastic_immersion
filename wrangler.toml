@@ -1,0 +1,9 @@
+name = "tmi"
+main = "src/index.mjs"
+compatibility_date = "2026-07-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tmi"
+database_id = "placeholder-filled-in-at-deploy"
+migrations_dir = "migrations"

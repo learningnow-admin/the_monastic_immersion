@@ -1,0 +1,16 @@
+{
+  "name": "tmi",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "squint compile src/worker.cljs",
+    "dev": "npm run build && wrangler dev",
+    "db:local": "wrangler d1 migrations apply tmi --local",
+    "db:remote": "wrangler d1 migrations apply tmi --remote",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "squint-cljs": "^0.14.206",
+    "wrangler": "^4.112.0"
+  }
+}
