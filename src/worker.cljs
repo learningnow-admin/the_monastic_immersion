@@ -17,18 +17,18 @@
 
 (def rules
   [["Fifteen minutes, at most" "If it runs longer, bring an excerpt."]
-   ["Silence during the piece" "It's a shared experience — protect the silence so everyone can actually meet it."]
+   ["Silence during the piece" "It's a shared experience. Protect the silence so everyone can actually meet it."]
    ["Comment only if moved to" "Sitting quietly with something is a full and valid response."]
    ["You won't love everything" "Someone else's taste will sometimes miss you completely. That's the deal."]
    ["No pretension" "A meme is as welcome as a sonnet. \"I don't know why but I liked it\" is a perfectly good thing to say."]
-   ["Snacks are bring-your-own" "If you want snacks, you bring them yourself."]])
+   ["Bring your own snacks" "If you want snacks, you bring them yourself."]])
 
 (def err-messages
   {"title"  "The artifact needs a title."
    "dup"    "You have already added an artifact to this session."
    "full"   "This session already has its five artifacts."
    "closed" "This session is not collecting artifacts right now."
-   "date"   "That date didn't look right — pick it from the calendar."
+   "date"   "That date didn't look right. Pick it from the calendar."
    "phase"  "That action doesn't fit the session's current phase."})
 
 ;; ---------------------------------------------------------------- small utils
@@ -322,14 +322,16 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
   "Four-line chant staff; each artifact is a neume, pitch drawn from its title."
   [artifacts scheduled?]
   (let [line-ys [16 28 40 52]
+        x-step (js/Math.round (/ 228 (max 1 (dec slots))))
+        x-for (fn [i] (+ 46 (* i x-step)))
         neume (fn [i a]
-                (let [x (+ 46 (* i 66))
+                (let [x (x-for i)
                       pitch (title-pitch (:title a))
                       y (- 54 (* pitch 5))]
                   [:rect {:x x :y (- y 5) :width 10 :height 10
                           :fill (if scheduled? "var(--gilt)" "var(--ink)")}]))
         ghost (fn [i]
-                [:rect {:x (+ 46 (* i 66)) :y 29 :width 10 :height 10
+                [:rect {:x (x-for i) :y 29 :width 10 :height 10
                         :fill "none" :stroke "var(--rule)" :stroke-width 1}])]
     [:svg {:class "staff" :viewBox "0 0 320 68" :role "img"
            :aria-label (str (count artifacts) " of " slots " artifacts gathered")}
@@ -341,7 +343,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
              (if (< i (count artifacts))
                (neume i (nth artifacts i))
                (ghost i)))
-           [0 1 2 3])
+           (vec (range slots)))
      (when (>= (count artifacts) slots)
        [:path {:d "M300 30 l8 8 l-8 8" :stroke (if scheduled? "var(--gilt)" "var(--ink)")
                :stroke-width 1.5 :fill "none"}])]))
@@ -392,7 +394,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                  answer (when v (:answer v))
                  glyph (case answer "yes" "✓" "maybe" "~" "no" "✕" "·")]
              [:span {:class "mark" :data-answer answer
-                     :title (str m (if answer (str " — " answer) " — no answer yet"))}
+                     :title (str m (if answer (str ": " answer) ": no answer yet"))}
               (str m " " glyph)]))
          members)])
 
@@ -418,7 +420,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
        [[:p {:style "margin-top:1rem"}
          (str "The five artifacts are gathered. Propose days; mark the ones you can make. We meet at " meeting-time " at " meeting-place ".")]
         (if (zero? (count options))
-          [:p {:class "notice"} "No days proposed yet — be the first."]
+          [:p {:class "notice"} "No days proposed yet. Be the first."]
           (mapv (fn [o]
                   (let [my-answer (:answer (or (find-vote votes (:id o) member) {}))
                         yes-count (count (filterv (fn [v] (and (= (:option_id v) (:id o))
@@ -446,7 +448,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
 
 (defn rules-section []
   [:details
-   [:summary "The Rule"]
+   [:summary "The Rules"]
    [:ol {:class "rule-list"}
     (mapv (fn [pair]
             [:li [:span (nth pair 0) ". "]
@@ -477,7 +479,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                    (mapv (fn [r]
                            (when (:title r)
                              [:li [:span {:class "a-title"} (:title r)]
-                              (str " — " (:type r) ", " (:member r))]))
+                              (str " · " (:type r) ", " (:member r))]))
                          rows)]]))
              numbers)])))
 
@@ -513,7 +515,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
              (scheduling-section session (:options data) (:votes data) (:members data) member token))
            (rules-section)
            (past-sessions (:past data))
-           [:footer "We consume cultural artifacts together — in the same place, at the same time."]]]]))))
+           [:footer "We consume cultural artifacts together, in the same place, at the same time."]]]]))))
 
 (defn closed-door
   "What the root URL — or an unrecognised token — shows."
