@@ -16,6 +16,14 @@
 (defn allowance [member]
   (or (get shares member) 1))
 
+(defn active-members [members absent]
+  (filterv (fn [m] (not (.includes absent m))) members))
+
+(defn effective-quorum
+  "The quorum bends only when the seats still in can't reach it."
+  [active]
+  (max 1 (min quorum (reduce (fn [acc m] (+ acc (allowance m))) 0 active))))
+
 (def meeting-time "7:30 pm")
 
 (def meeting-place "Nina's house")
@@ -58,7 +66,8 @@
    "full"   "This session already has all its artifacts."
    "closed" "This session is not collecting artifacts right now."
    "date"   "That date didn't look right. Pick it from the calendar."
-   "phase"  "That action doesn't fit the session's current phase."})
+   "phase"  "That action doesn't fit the session's current phase."
+   "absent" "You're sitting this session out. Rejoin to take part."})
 
 ;; ---------------------------------------------------------------- small utils
 
@@ -157,15 +166,23 @@
     (let [row (js-await (q-first db "SELECT name FROM members WHERE token = ?" [token]))]
       (when row (:name row)))))
 
+(defn ^:async member-absent? [db member]
+  (let [session (js-await (current-session db))
+        row (js-await (q-first db "SELECT 1 AS one FROM absences WHERE session_id = ? AND member = ?"
+                               [(:id session) member]))]
+    (some? row)))
+
 (defn ^:async load-data [db]
   (let [session (js-await (current-session db))
         members (js-await (q-all db "SELECT name FROM members ORDER BY rowid" nil))
+        absences (js-await (q-all db "SELECT member FROM absences WHERE session_id = ?" [(:id session)]))
         artifacts (js-await (q-all db "SELECT * FROM artifacts WHERE session_id = ? ORDER BY id" [(:id session)]))
         options (js-await (q-all db "SELECT * FROM date_options WHERE session_id = ? ORDER BY date" [(:id session)]))
         votes (js-await (q-all db "SELECT v.option_id, v.member, v.answer FROM votes v JOIN date_options o ON v.option_id = o.id WHERE o.session_id = ?" [(:id session)]))
         past (js-await (q-all db "SELECT s.number, s.locked_date, s.host, a.title, a.type, a.member FROM sessions s LEFT JOIN artifacts a ON a.session_id = s.id WHERE s.status = 'done' ORDER BY s.number DESC, a.id" nil))]
     {:session session
      :members (mapv (fn [m] (:name m)) members)
+     :absent (mapv (fn [a] (:member a)) absences)
      :artifacts artifacts
      :options options
      :votes votes
@@ -231,6 +248,10 @@ h1 {
   margin-top: 2rem;
 }
 .identity b { font-weight: 400; font-style: normal; color: var(--ink); }
+
+.absence { text-align: center; color: var(--faint); font-style: italic; font-size: .9rem; margin-top: .5rem; }
+.absence form { display: inline; }
+.absent-note { margin-top: .3rem; opacity: .85; }
 
 .staff { display: block; margin: 2.4rem auto 0; width: 100%; max-width: 21rem; }
 
@@ -365,8 +386,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
 
 (defn staff-svg
   "Four-line chant staff; each artifact is a neume, pitch drawn from its title.
-   Three positions are always drawn (the quorum); bonus artifacts extend the line."
-  [artifacts scheduled?]
+   Quorum positions are always drawn; bonus artifacts extend the line."
+  [artifacts scheduled? eq]
   (let [n (count artifacts)
         line-ys [16 28 40 52]
         x-step (js/Math.round (/ 228 (max 1 (dec slots))))
@@ -378,15 +399,15 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                   [:rect {:x x :y (- y 5) :width 10 :height 10
                           :fill (if scheduled? "var(--gilt)" "var(--ink)")}]))
         ghost (fn [i]
-                (let [bonus? (>= i quorum)]
+                (let [bonus? (>= i eq)]
                   [:rect {:x (x-for i) :y 29 :width 10 :height 10
                           :fill "none"
                           :stroke (if bonus? "var(--gilt)" "var(--rule)")
                           :stroke-dasharray (when bonus? "3 2")
                           :stroke-width 1}]))]
     [:svg {:class "staff" :viewBox "0 0 320 68" :role "img"
-           :aria-label (if (< n quorum)
-                         (str n " of " quorum " artifacts needed to meet")
+           :aria-label (if (< n eq)
+                         (str n " of " eq " artifacts needed to meet")
                          (str n " artifacts gathered; a day can be set"))}
      (mapv (fn [y] [:line {:x1 8 :y1 y :x2 312 :y2 y
                            :stroke "var(--rule)" :stroke-width 1}])
@@ -397,7 +418,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                (neume i (nth artifacts i))
                (ghost i)))
            (vec (range slots)))
-     (when (>= n quorum)
+     (when (>= n eq)
        [:path {:d "M300 30 l8 8 l-8 8" :stroke (if scheduled? "var(--gilt)" "var(--ink)")
                :stroke-width 1.5 :fill "none"}])]))
 
@@ -407,7 +428,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
 (defn place-for [session]
   (if (:host session) (str (:host session) "'s house") meeting-place))
 
-(defn host-line [session member token]
+(defn host-line [session member token absent?]
   (let [host (:host session)]
     [:div {:class "host-line"}
      (if host
@@ -415,17 +436,34 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         (when (= member host)
           [:form {:method "post" :action (action token "host/delete")}
            [:button {:class "quiet"} "step down"]])]
-       [:form {:method "post" :action (action token "host")}
-        [:button {:class "quiet"} "Offer to host · first to click has it"]])]))
+       (when-not absent?
+         [:form {:method "post" :action (action token "host")}
+          [:button {:class "quiet"} "Offer to host · first to click has it"]]))]))
 
-(defn artifact-section [session artifacts err member token]
+(defn absence-line
+  "The seat's own sit-out toggle, plus a note naming anyone else sitting out."
+  [member absent token]
+  (let [absent? (.includes absent member)
+        others (filterv (fn [m] (not= m member)) absent)]
+    [:div {:class "absence"}
+     (if absent?
+       [:form {:method "post" :action (action token "absence/delete")}
+        "You sit this session out · "
+        [:button {:class "quiet"} "rejoin"]]
+       [:form {:method "post" :action (action token "absence")}
+        [:button {:class "quiet"} "sit this session out"]])
+     (when (pos? (count others))
+       [:p {:class "absent-note"}
+        (str "Sitting this one out: " (str/join " · " others))])]))
+
+(defn artifact-section [session artifacts err member token eq absent?]
   (let [n (count artifacts)
         collecting? (= "collecting" (:status session))
         mine (count (filterv (fn [a] (= member (:member a))) artifacts))]
     [:section
      [:div {:class "section-label"}
-      (if (< n quorum)
-        (str "Artifacts · " n " of " quorum " needed to meet")
+      (if (< n eq)
+        (str "Artifacts · " n " of " eq " needed to meet")
         (str "Artifacts · " n " gathered · enough to meet"))]
      (when err [:p {:class "notice"} err])
      [:ol {:class "artifacts"}
@@ -439,13 +477,13 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                   [:input {:type "hidden" :name "id" :value (:id a)}]
                   [:button {:class "quiet" :aria-label "Withdraw this artifact"} "withdraw"]])])
             artifacts)
-      (when (< n quorum)
+      (when (< n eq)
         (mapv (fn [_] [:li {:class "artifact-row empty"} "awaiting an offering"])
-              (vec (.fill (js/Array. (- quorum n)) 0))))
-      (when (and (< (max n quorum) slots) (not= "done" (:status session)))
+              (vec (.fill (js/Array. (- eq n)) 0))))
+      (when (and (< (max n eq) slots) (not= "done" (:status session)))
         (mapv (fn [_] [:li {:class "artifact-row empty bonus"} "awaiting an offering (bonus)"])
-              (vec (.fill (js/Array. (- slots (max n quorum))) 0))))]
-     (when (and (< n slots) (< mine (allowance member)) (not= "done" (:status session)))
+              (vec (.fill (js/Array. (- slots (max n eq))) 0))))]
+     (when (and (not absent?) (< n slots) (< mine (allowance member)) (not= "done" (:status session)))
        [:form {:class "offer" :method "post" :action (action token "artifact")}
         [:div {:class "row"}
          [:input {:type "text" :name "title" :placeholder "Title" :required true
@@ -477,55 +515,61 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
    [:input {:type "hidden" :name "answer" :value answer}]
    [:button {:class (when current? "current")} label]])
 
-(defn scheduling-section [session artifacts options votes members member token]
+(defn scheduling-section [session artifacts options votes members member token eq absent?]
   (let [scheduled? (= "scheduled" (:status session))
         n (count artifacts)
-        quorate? (>= n quorum)]
+        quorate? (>= n eq)
+        ;; members here is the active circle; sitting-out seats leave the marks.
+        votes* (filterv (fn [v] (.includes members (:member v))) votes)]
     [:section
      [:div {:class "section-label"} "Finding a day"]
      (if scheduled?
        [:div {:class "locked"}
         [:p "The artifacts are gathered. We meet on"]
         [:p {:class "day"} (str (date-label (:locked_date session)) " · " meeting-time " · " (place-for session))]
-        (host-line session member token)
-        [:div {:class "after"}
-         [:form {:method "post" :action (action token "done")}
-          [:button {} "The session happened"]]
-         [:form {:method "post" :action (action token "unlock")}
-          [:button {:class "quiet"} "reopen the vote"]]]]
+        (host-line session member token absent?)
+        (when-not absent?
+          [:div {:class "after"}
+           [:form {:method "post" :action (action token "done")}
+            [:button {} "The session happened"]]
+           [:form {:method "post" :action (action token "unlock")}
+            [:button {:class "quiet"} "reopen the vote"]]])]
        [[:p {:style "margin-top:1rem"}
-         (str (if quorate?
-                "Enough artifacts are gathered; a day can be set. Mark the ones you can make."
-                (str "Propose days while the artifacts gather; at least " quorum " artifacts make a meeting."))
+         (str (cond
+                absent? "You sit this one out; the vote won't wait for you."
+                quorate? "Enough artifacts are gathered; a day can be set. Mark the ones you can make."
+                :else (str "Propose days while the artifacts gather; at least " eq " artifacts make a meeting."))
               " We meet at " meeting-time " at " (place-for session) ".")]
-        (host-line session member token)
+        (host-line session member token absent?)
         (if (zero? (count options))
           [:p {:class "notice"} "No days proposed yet. Be the first."]
           (mapv (fn [o]
-                  (let [my-answer (:answer (or (find-vote votes (:id o) member) {}))
+                  (let [my-answer (:answer (or (find-vote votes* (:id o) member) {}))
                         yes-count (count (filterv (fn [v] (and (= (:option_id v) (:id o))
                                                                (= "yes" (:answer v))))
-                                                  votes))]
+                                                  votes*))]
                     [:div {:class "vote-row"}
                      [:div {:class "vote-head"}
                       [:span {:class "vote-date"} (date-label (:date o))]
-                      (vote-marks o members votes)]
-                     [:div {:class "vote-actions"}
-                      (vote-button token (:id o) "yes" "Can" (= "yes" my-answer))
-                      (vote-button token (:id o) "maybe" "Maybe" (= "maybe" my-answer))
-                      (vote-button token (:id o) "no" "Can't" (= "no" my-answer))
-                      (when quorate?
-                        [:form {:method "post" :action (action token "lock") :style "margin-left:auto"}
+                      (vote-marks o members votes*)]
+                     (when-not absent?
+                       [:div {:class "vote-actions"}
+                        (vote-button token (:id o) "yes" "Can" (= "yes" my-answer))
+                        (vote-button token (:id o) "maybe" "Maybe" (= "maybe" my-answer))
+                        (vote-button token (:id o) "no" "Can't" (= "no" my-answer))
+                        (when quorate?
+                          [:form {:method "post" :action (action token "lock") :style "margin-left:auto"}
+                           [:input {:type "hidden" :name "option_id" :value (:id o)}]
+                           [:button {:class "quiet"} (str "set this day · " yes-count " can")]])
+                        [:form {:method "post" :action (action token "dates/delete")}
                          [:input {:type "hidden" :name "option_id" :value (:id o)}]
-                         [:button {:class "quiet"} (str "set this day · " yes-count " can")]])
-                      [:form {:method "post" :action (action token "dates/delete")}
-                       [:input {:type "hidden" :name "option_id" :value (:id o)}]
-                       [:button {:class "quiet" :aria-label "Remove this day"} "✕"]]]]))
+                         [:button {:class "quiet" :aria-label "Remove this day"} "✕"]]])]))
                 options))
-        [:form {:class "propose" :method "post" :action (action token "dates")}
-         [:label {:for "new-date"} "Propose a day"]
-         [:input {:type "date" :id "new-date" :name "date" :required true}]
-         [:button {} "Propose"]]])]))
+        (when-not absent?
+          [:form {:class "propose" :method "post" :action (action token "dates")}
+           [:label {:for "new-date"} "Propose a day"]
+           [:input {:type "date" :id "new-date" :name "date" :required true}]
+           [:button {} "Propose"]])])]))
 
 (defn pair-li [pair]
   [:li [:span (nth pair 0) ". "]
@@ -588,14 +632,14 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                          rows)]]))
              numbers)])))
 
-(defn status-line [session artifacts]
+(defn status-line [session artifacts eq]
   (let [status (:status session)
         n (count artifacts)]
     [:p {:class "session-line"}
      (str "Session " (roman (:number session)) " · ")
      (case status
-       "collecting" (if (< n quorum)
-                      (str "gathering, " n " of " quorum)
+       "collecting" (if (< n eq)
+                      (str "gathering, " n " of " eq)
                       (str n " gathered · a day can be set"))
        "scheduling" "finding a day"
        "scheduled" [:span {:class "set-date"}
@@ -605,6 +649,10 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
 (defn page [data err member token]
   (let [session (:session data)
         artifacts (:artifacts data)
+        absent (:absent data)
+        active (active-members (:members data) absent)
+        eq (effective-quorum active)
+        absent? (.includes absent member)
         scheduled? (= "scheduled" (:status session))]
     (str
      "<!doctype html>"
@@ -614,14 +662,15 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
           [:main
            [:div {:class "hedera" :aria-hidden "true"} "❧"]
            [:h1 "The Monastic Immersion"]
-           (status-line session artifacts)
+           (status-line session artifacts eq)
            [:p {:class "identity"} "Reading as " [:b member]]
-           (staff-svg artifacts scheduled?)
+           (absence-line member absent token)
+           (staff-svg artifacts scheduled? eq)
            (when scheduled?
              [:p {:class "meet-banner"}
               (str (date-label (:locked_date session)) " · " meeting-time " · " (place-for session))])
-           (artifact-section session artifacts err member token)
-           (scheduling-section session artifacts (:options data) (:votes data) (:members data) member token)
+           (artifact-section session artifacts err member token eq absent?)
+           (scheduling-section session artifacts (:options data) (:votes data) active member token eq absent?)
            (procedure-section)
            (rules-section)
            (influences-section)
@@ -759,10 +808,14 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         opt (js-await (q-first db "SELECT * FROM date_options WHERE id = ? AND session_id = ?"
                                [option-id (:id session)]))
         n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
-                                 [(:id session)]))]
+                                 [(:id session)]))
+        members (js-await (q-all db "SELECT name FROM members ORDER BY rowid" nil))
+        absences (js-await (q-all db "SELECT member FROM absences WHERE session_id = ?" [(:id session)]))
+        eq (effective-quorum (active-members (mapv (fn [m] (:name m)) members)
+                                             (mapv (fn [a] (:member a)) absences)))]
     (if (or (not (.includes ["collecting" "scheduling"] (:status session)))
             (nil? opt)
-            (< (:n n-row) quorum))
+            (< (:n n-row) eq))
       (redirect url token "phase")
       (do
         (js-await (q-run db "UPDATE sessions SET status = 'scheduled', locked_date = ? WHERE id = ?"
@@ -794,6 +847,35 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
   (let [db (:DB env)
         session (js-await (current-session db))]
     (js-await (q-run db "UPDATE sessions SET host = NULL WHERE id = ? AND host = ?"
+                     [(:id session) member]))
+    (redirect url token)))
+
+(defn ^:async post-absence
+  "Sit the current session out: your artifacts are withdrawn, hosting handed
+   back, and your seat leaves the vote marks so nobody waits on you."
+  [req env url member token]
+  (let [db (:DB env)
+        session (js-await (current-session db))]
+    (js-await (q-run db "INSERT OR IGNORE INTO absences (session_id, member) VALUES (?, ?)"
+                     [(:id session) member]))
+    (js-await (q-run db "DELETE FROM artifacts WHERE session_id = ? AND member = ?"
+                     [(:id session) member]))
+    (js-await (q-run db "UPDATE sessions SET host = NULL WHERE id = ? AND host = ?"
+                     [(:id session) member]))
+    (when (= "scheduling" (:status session))
+      (let [n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
+                                     [(:id session)]))]
+        (when (< (:n n-row) slots)
+          (js-await (q-run db "UPDATE sessions SET status = 'collecting' WHERE id = ?"
+                           [(:id session)])))))
+    (redirect url token)))
+
+(defn ^:async post-absence-delete
+  "Rejoin: the share comes back and any earlier votes reappear."
+  [req env url member token]
+  (let [db (:DB env)
+        session (js-await (current-session db))]
+    (js-await (q-run db "DELETE FROM absences WHERE session_id = ? AND member = ?"
                      [(:id session) member]))
     (redirect url token)))
 
@@ -843,18 +925,26 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
             (html-response (page data err member token)))
 
           (= "POST" method)
-          (case (str/join "/" (.slice segs 2))
-            "artifact" (js-await (post-artifact req env url member token))
-            "artifact/delete" (js-await (post-artifact-delete req env url member token))
-            "dates" (js-await (post-dates req env url member token))
-            "dates/delete" (js-await (post-dates-delete req env url member token))
-            "vote" (js-await (post-vote req env url member token))
-            "lock" (js-await (post-lock req env url member token))
-            "unlock" (js-await (post-unlock req env url member token))
-            "host" (js-await (post-host req env url member token))
-            "host/delete" (js-await (post-host-delete req env url member token))
-            "done" (js-await (post-done req env url member token))
-            (js/Response. "Not found" {:status 404}))
+          ;; A seat sitting the session out has stepped back: the only action
+          ;; left to it is stepping back in.
+          (let [act (str/join "/" (.slice segs 2))]
+            (if (and (not (.includes ["absence" "absence/delete"] act))
+                     (js-await (member-absent? db member)))
+              (redirect url token "absent")
+              (case act
+                "artifact" (js-await (post-artifact req env url member token))
+                "artifact/delete" (js-await (post-artifact-delete req env url member token))
+                "dates" (js-await (post-dates req env url member token))
+                "dates/delete" (js-await (post-dates-delete req env url member token))
+                "vote" (js-await (post-vote req env url member token))
+                "lock" (js-await (post-lock req env url member token))
+                "unlock" (js-await (post-unlock req env url member token))
+                "host" (js-await (post-host req env url member token))
+                "host/delete" (js-await (post-host-delete req env url member token))
+                "done" (js-await (post-done req env url member token))
+                "absence" (js-await (post-absence req env url member token))
+                "absence/delete" (js-await (post-absence-delete req env url member token))
+                (js/Response. "Not found" {:status 404}))))
 
           :else (js/Response. "Not found" {:status 404})))
 

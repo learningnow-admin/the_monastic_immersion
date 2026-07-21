@@ -8,6 +8,12 @@ voted on from the start. Whoever offers first hosts (default: Nina's house);
 meet (7:30 pm, always), mark it done, and the next session begins with a day
 four weeks on already proposed.
 
+A seat can sit a session out any time before the session is done: its
+artifacts are withdrawn, hosting is handed back, and it leaves the vote marks
+so nobody waits on it. Rejoining restores the share and any earlier votes.
+The quorum stays at three and bends down only when the seats still in can't
+reach it. Absences are per session; everyone is back in when the next begins.
+
 ## Stack
 
 - **Squint** (`src/worker.cljs`) — Clojure syntax compiled to a plain JS module.
