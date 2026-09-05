@@ -10,7 +10,7 @@
 (def quorum 3)  ;; artifacts needed before a day can be set
 
 (def shares
-  "How many artifacts each seat may add per session; one unless listed here."
+  "How many artifacts each member may add per session; one unless listed here."
   {"Otto & Cass" 2})
 
 (defn allowance [member]
@@ -20,7 +20,7 @@
   (filterv (fn [m] (not (.includes absent m))) members))
 
 (defn effective-quorum
-  "The quorum bends only when the seats still in can't reach it."
+  "The quorum bends only when the members still in can't reach it."
   [active]
   (max 1 (min quorum (reduce (fn [acc m] (+ acc (allowance m))) 0 active))))
 
@@ -42,9 +42,9 @@
 
 (def procedure
   [["The set up"
-    [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to make a meeting; anything past three is a bonus. One share each per session, two for a shared seat."]
+    [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to make a meeting; anything past three is a bonus. One artifact each per session, two for the shared seat."]
      ["Find a day" "Propose days any time and mark the ones you can make. Each new session starts with a day about a month out already on the table."]
-     ["The day is set" "Once three artifacts are in, anyone can set the day, choosing one most people can make. Whoever offers first hosts; if nobody does, we land at Nina's."]]]
+     ["The day is set" "Once three artifacts are in, anyone can set the day, choosing one most people can make. Whoever says so first hosts; if nobody does, we meet at Nina's."]]]
    ["The meeting itself"
     [["Bring it" "Whoever added an artifact makes sure it's there and ready. You can introduce it if you like, but you don't have to give any background at all."]
      ["Read it, play it, or show it" nil]
@@ -62,7 +62,7 @@
 
 (def err-messages
   {"title"  "The artifact needs a title."
-   "dup"    "Your shares for this session are already in."
+   "dup"    "Your artifacts for this session are already in."
    "full"   "This session already has all its artifacts."
    "closed" "This session is not collecting artifacts right now."
    "date"   "That date didn't look right. Pick it from the calendar."
@@ -438,10 +438,10 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
            [:button {:class "quiet"} "step down"]])]
        (when-not absent?
          [:form {:method "post" :action (action token "host")}
-          [:button {:class "quiet"} "Offer to host · first to click has it"]]))]))
+          [:button {:class "quiet"} "I can host · first to click has it"]]))]))
 
 (defn absence-line
-  "The seat's own sit-out toggle, plus a note naming anyone else sitting out."
+  "Your own sit-out toggle, plus a note naming anyone else sitting out."
   [member absent token]
   (let [absent? (.includes absent member)
         others (filterv (fn [m] (not= m member)) absent)]
@@ -478,10 +478,10 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                   [:button {:class "quiet" :aria-label "Withdraw this artifact"} "withdraw"]])])
             artifacts)
       (when (< n eq)
-        (mapv (fn [_] [:li {:class "artifact-row empty"} "awaiting an offering"])
+        (mapv (fn [_] [:li {:class "artifact-row empty"} "open"])
               (vec (.fill (js/Array. (- eq n)) 0))))
       (when (and (< (max n eq) slots) (not= "done" (:status session)))
-        (mapv (fn [_] [:li {:class "artifact-row empty bonus"} "awaiting an offering (bonus)"])
+        (mapv (fn [_] [:li {:class "artifact-row empty bonus"} "open (bonus)"])
               (vec (.fill (js/Array. (- slots (max n eq))) 0))))]
      (when (and (not absent?) (< n slots) (< mine (allowance member)) (not= "done" (:status session)))
        [:form {:class "offer" :method "post" :action (action token "artifact")}
@@ -519,7 +519,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
   (let [scheduled? (= "scheduled" (:status session))
         n (count artifacts)
         quorate? (>= n eq)
-        ;; members here is the active circle; sitting-out seats leave the marks.
+        ;; members here is everyone taking part; anyone sitting out leaves the marks.
         votes* (filterv (fn [v] (.includes members (:member v))) votes)]
     [:section
      [:div {:class "section-label"} "Finding a day"]
@@ -663,7 +663,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
            [:div {:class "hedera" :aria-hidden "true"} "❧"]
            [:h1 "The Monastic Immersion"]
            (status-line session artifacts eq)
-           [:p {:class "identity"} "Reading as " [:b member]]
+           [:p {:class "identity"} "Signed in as " [:b member]]
            (absence-line member absent token)
            (staff-svg artifacts scheduled? eq)
            (when scheduled?
@@ -690,8 +690,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
          [:h1 "The Monastic Immersion"]
          [:p {:class "closed-door"}
           (if unknown-token?
-            "This link isn't recognised. Ask the keeper of the list for a fresh one."
-            "A private circle. If you belong to it, use your personal link.")]]]])))
+            "This link isn't recognised. Ask Nina for a fresh one."
+            "This page is for members. Use your personal link.")]]]])))
 
 ;; ---------------------------------------------------------------- responses
 
@@ -835,7 +835,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         (redirect url token)))))
 
 (defn ^:async post-host
-  "First to offer hosts: the WHERE host IS NULL makes the first click win."
+  "First to click hosts: the WHERE host IS NULL makes the first click win."
   [req env url member token]
   (let [db (:DB env)
         session (js-await (current-session db))]
@@ -852,7 +852,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
 
 (defn ^:async post-absence
   "Sit the current session out: your artifacts are withdrawn, hosting handed
-   back, and your seat leaves the vote marks so nobody waits on you."
+   back, and you leave the vote marks so nobody waits on you."
   [req env url member token]
   (let [db (:DB env)
         session (js-await (current-session db))]
@@ -871,7 +871,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
     (redirect url token)))
 
 (defn ^:async post-absence-delete
-  "Rejoin: the share comes back and any earlier votes reappear."
+  "Rejoin: your artifacts can be added again and any earlier votes reappear."
   [req env url member token]
   (let [db (:DB env)
         session (js-await (current-session db))]
@@ -925,7 +925,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
             (html-response (page data err member token)))
 
           (= "POST" method)
-          ;; A seat sitting the session out has stepped back: the only action
+          ;; Someone sitting the session out has stepped back: the only action
           ;; left to it is stepping back in.
           (let [act (str/join "/" (.slice segs 2))]
             (if (and (not (.includes ["absence" "absence/delete"] act))
