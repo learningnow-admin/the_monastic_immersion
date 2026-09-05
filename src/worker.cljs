@@ -5,16 +5,9 @@
 
 ;; ---------------------------------------------------------------- config
 
-(def slots 5)   ;; most artifacts a session can hold
+(def per-person 2)  ;; artifacts each member may add per session; a guest gets as many again
 
-(def quorum 3)  ;; artifacts needed before a day can be set
-
-(def shares
-  "How many artifacts each member may add per session; one unless listed here."
-  {"Otto & Cass" 2})
-
-(defn allowance [member]
-  (or (get shares member) 1))
+(def quorum 3)      ;; artifacts needed before a day can be set
 
 (defn active-members [members absent]
   (filterv (fn [m] (not (.includes absent m))) members))
@@ -22,7 +15,7 @@
 (defn effective-quorum
   "The quorum bends only when the members still in can't reach it."
   [active]
-  (max 1 (min quorum (reduce (fn [acc m] (+ acc (allowance m))) 0 active))))
+  (max 1 (min quorum (* per-person (count active)))))
 
 (def meeting-time "7:30 pm")
 
@@ -33,7 +26,7 @@
    "Event" "Idea" "Game" "Other"])
 
 (def rules
-  [["Fifteen minutes, at most" "If it runs longer, bring an excerpt."]
+  [["Fifteen minutes each, at most" "One thing or two, but your whole share stays under fifteen minutes. If something runs longer, bring an excerpt. Fifteen is the most, not the aim; on a full night, shorter is kinder."]
    ["Silence during the piece" "It's a shared experience. Protect the silence so everyone can actually meet it."]
    ["Comment only if moved to" "Sitting quietly with something is a full and valid response."]
    ["You won't love everything" "Someone else's taste will sometimes miss you completely. That's the deal."]
@@ -42,13 +35,19 @@
 
 (def procedure
   [["The set up"
-    [["Add your artifact" "Give it a title, pick its type. Three artifacts are enough to make a meeting; anything past three is a bonus. One artifact each per session, two for the shared seat."]
+    [["Add your artifact" "Give it a title, pick its type. Up to two each per session. Three artifacts are enough to make a meeting; anything past three is a bonus."]
      ["Find a day" "Propose days any time and mark the ones you can make. Each new session starts with a day about a month out already on the table."]
      ["The day is set" "Once three artifacts are in, anyone can set the day, choosing one most people can make. Whoever says so first hosts; if nobody does, we meet at Nina's."]]]
    ["The meeting itself"
     [["Bring it" "Whoever added an artifact makes sure it's there and ready. You can introduce it if you like, but you don't have to give any background at all."]
      ["Read it, play it, or show it" nil]
      ["Sit with it" "Once it's finished, anyone who wants to can make a comment, and anyone who doesn't can simply sit with it."]]]])
+
+(def guests
+  [["One guest per session" "Bring someone if you like. Nobody has to."]
+   ["They get their own two" "A guest may bring up to two things, fifteen minutes in all, same as anyone. You record them: add each one under your link with the guest's name in the guest box."]
+   ["You answer for them on days" "Check with your guest before marking a day you can make. Your mark covers you both. Guests don't vote."]
+   ["Making a guest regular" "If a guest wants to keep coming, ask Nina for a link for them. Once you do, neither you nor they can invite anyone else. That is the only way the group stays small enough to get through everyone in an evening."]])
 
 (def influences
   [["From the Quakers" "They sit in silence and speak only if moved to. Having an opinion is optional; looking at the thing is enough. You don't owe the room a take, but if something does move you to speak, you speak, and a conversation happens."]
@@ -62,8 +61,9 @@
 
 (def err-messages
   {"title"  "The artifact needs a title."
-   "dup"    "Your artifacts for this session are already in."
-   "full"   "This session already has all its artifacts."
+   "dup"    "Your two for this session are already in."
+   "gdup"   "Your guest's two are already in."
+   "guest"  "One guest a session: use the same name on both of their artifacts."
    "closed" "This session is not collecting artifacts right now."
    "date"   "That date didn't look right. Pick it from the calendar."
    "phase"  "That action doesn't fit the session's current phase."
@@ -179,7 +179,7 @@
         artifacts (js-await (q-all db "SELECT * FROM artifacts WHERE session_id = ? ORDER BY id" [(:id session)]))
         options (js-await (q-all db "SELECT * FROM date_options WHERE session_id = ? ORDER BY date" [(:id session)]))
         votes (js-await (q-all db "SELECT v.option_id, v.member, v.answer FROM votes v JOIN date_options o ON v.option_id = o.id WHERE o.session_id = ?" [(:id session)]))
-        past (js-await (q-all db "SELECT s.number, s.locked_date, s.host, a.title, a.type, a.member FROM sessions s LEFT JOIN artifacts a ON a.session_id = s.id WHERE s.status = 'done' ORDER BY s.number DESC, a.id" nil))]
+        past (js-await (q-all db "SELECT s.number, s.locked_date, s.host, a.title, a.type, a.member, a.guest FROM sessions s LEFT JOIN artifacts a ON a.session_id = s.id WHERE s.status = 'done' ORDER BY s.number DESC, a.id" nil))]
     {:session session
      :members (mapv (fn [m] (:name m)) members)
      :absent (mapv (fn [a] (:member a)) absences)
@@ -311,7 +311,10 @@ button.quiet:hover { background: transparent; color: var(--rubric); }
 
 .offer { margin-top: 1.4rem; }
 .offer .row { display: flex; flex-wrap: wrap; gap: .9rem 1rem; align-items: baseline; margin-top: .9rem; }
-.offer input[type=text] { flex: 1 1 12rem; }
+.offer input[name=title] { flex: 1 1 12rem; }
+.offer input[name=guest] { flex: 1 1 8rem; font-size: .95rem; }
+
+.allowance { color: var(--faint); font-size: .85rem; font-style: italic; margin-top: .6rem; }
 
 .notice { color: var(--rubric); margin-top: 1rem; font-style: italic; }
 
@@ -386,11 +389,13 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
 
 (defn staff-svg
   "Four-line chant staff; each artifact is a neume, pitch drawn from its title.
-   Quorum positions are always drawn; bonus artifacts extend the line."
+   Quorum positions are always drawn; bonus artifacts extend the line, and one
+   open bonus position is sketched after them while the session is live."
   [artifacts scheduled? eq]
   (let [n (count artifacts)
         line-ys [16 28 40 52]
-        x-step (js/Math.round (/ 228 (max 1 (dec slots))))
+        positions (if (and (>= n eq) (not scheduled?)) (inc n) (max n eq))
+        x-step (min 57 (js/Math.round (/ 228 (max 1 (dec positions)))))
         x-for (fn [i] (+ 46 (* i x-step)))
         neume (fn [i a]
                 (let [x (x-for i)
@@ -417,7 +422,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
              (if (< i n)
                (neume i (nth artifacts i))
                (ghost i)))
-           (vec (range slots)))
+           (vec (range positions)))
      (when (>= n eq)
        [:path {:d "M300 30 l8 8 l-8 8" :stroke (if scheduled? "var(--gilt)" "var(--ink)")
                :stroke-width 1.5 :fill "none"}])]))
@@ -456,10 +461,16 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
        [:p {:class "absent-note"}
         (str "Sitting this one out: " (str/join " · " others))])]))
 
+(defn own-artifact? [a] (nil? (:guest a)))
+
 (defn artifact-section [session artifacts err member token eq absent?]
   (let [n (count artifacts)
-        collecting? (= "collecting" (:status session))
-        mine (count (filterv (fn [a] (= member (:member a))) artifacts))]
+        collecting? (.includes ["collecting" "scheduling"] (:status session))
+        done? (= "done" (:status session))
+        mine (filterv (fn [a] (= member (:member a))) artifacts)
+        own (count (filterv own-artifact? mine))
+        guest-n (- (count mine) own)
+        guest-name (:guest (nth (filterv (fn [a] (not (own-artifact? a))) mine) 0 nil))]
     [:section
      [:div {:class "section-label"}
       (if (< n eq)
@@ -471,7 +482,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
               [:li {:class "artifact-row"}
                [:span {:class "a-title"} (:title a)]
                [:span {:class "a-type"} (:type a)]
-               [:span {:class "a-member"} (:member a)]
+               [:span {:class "a-member"}
+                (if (:guest a) (str (:guest a) ", guest of " (:member a)) (:member a))]
                (when (and collecting? (= member (:member a)))
                  [:form {:method "post" :action (action token "artifact/delete")}
                   [:input {:type "hidden" :name "id" :value (:id a)}]
@@ -480,17 +492,23 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
       (when (< n eq)
         (mapv (fn [_] [:li {:class "artifact-row empty"} "open"])
               (vec (.fill (js/Array. (- eq n)) 0))))
-      (when (and (< (max n eq) slots) (not= "done" (:status session)))
-        (mapv (fn [_] [:li {:class "artifact-row empty bonus"} "open (bonus)"])
-              (vec (.fill (js/Array. (- slots (max n eq))) 0))))]
-     (when (and (not absent?) (< n slots) (< mine (allowance member)) (not= "done" (:status session)))
+      (when (and (>= n eq) (not done?))
+        [:li {:class "artifact-row empty bonus"} "open (bonus)"])]
+     (when (and (not absent?) (not done?) (or (< own per-person) (< guest-n per-person)))
        [:form {:class "offer" :method "post" :action (action token "artifact")}
         [:div {:class "row"}
          [:input {:type "text" :name "title" :placeholder "Title" :required true
                   :maxlength 120 :aria-label "Artifact title"}]
          [:select {:name "type" :aria-label "Artifact type"}
           (mapv (fn [t] [:option {:value t} t]) artifact-types)]
-         [:button {} "Add your artifact"]]])]))
+         [:input {:type "text" :name "guest" :maxlength 60
+                  :placeholder (if guest-name (str "Guest: " guest-name) "Guest's name, if it's theirs")
+                  :value (when (>= own per-person) guest-name)
+                  :aria-label "Guest's name, if the artifact is a guest's"}]
+         [:button {} "Add"]]
+        [:p {:class "allowance"}
+         (str "You: " own " of " per-person
+              (if guest-name (str " · " guest-name ": " guest-n " of " per-person) " · a guest may bring two more"))]])]))
 
 (defn find-vote [votes option-id member]
   (reduce (fn [acc v]
@@ -591,6 +609,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
              (mapv pair-li (nth part 1))]])
          procedure)])
 (defn rules-section [] (pair-list-section "The Rules" rules))
+(defn guests-section [] (pair-list-section "Guests" guests))
 (defn influences-section [] (pair-list-section "Influences" influences))
 
 (defn past-sessions [past]
@@ -628,7 +647,8 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                    (mapv (fn [r]
                            (when (:title r)
                              [:li [:span {:class "a-title"} (:title r)]
-                              (str " · " (:type r) ", " (:member r))]))
+                              (str " · " (:type r) ", "
+                                   (if (:guest r) (str (:guest r) ", guest of " (:member r)) (:member r)))]))
                          rows)]]))
              numbers)])))
 
@@ -673,6 +693,7 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
            (scheduling-section session artifacts (:options data) (:votes data) active member token eq absent?)
            (procedure-section)
            (rules-section)
+           (guests-section)
            (influences-section)
            (past-sessions (:past data))
            [:footer "We consume cultural artifacts together, in the same place, at the same time."]]]]))))
@@ -716,25 +737,26 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         fd (js-await (.formData req))
         title (.trim (str (or (.get fd "title") "")))
         type* (or (.get fd "type") "Other")
+        guest (let [g (.trim (str (or (.get fd "guest") "")))] (when-not (blank? g) g))
         session (js-await (current-session db))]
     (cond
       (blank? title) (redirect url token "title")
+      (= "done" (:status session)) (redirect url token "closed")
       :else
-      (let [mine-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ? AND member = ?"
-                                        [(:id session) member]))
-            n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
-                                     [(:id session)]))
-            n (:n n-row)]
+      ;; Two piles per link: the member's own and one named guest's.
+      (let [mine (js-await (q-all db "SELECT guest FROM artifacts WHERE session_id = ? AND member = ?"
+                                  [(:id session) member]))
+            own (count (filterv own-artifact? mine))
+            guest-rows (filterv (fn [a] (not (own-artifact? a))) mine)
+            guest-name (:guest (nth guest-rows 0 nil))]
         (cond
-          (>= (:n mine-row) (allowance member)) (redirect url token "dup")
-          (>= n slots) (redirect url token "full")
+          (and (nil? guest) (>= own per-person)) (redirect url token "dup")
+          (and guest guest-name (not= guest guest-name)) (redirect url token "guest")
+          (and guest (>= (count guest-rows) per-person)) (redirect url token "gdup")
           :else
           (do
-            (js-await (q-run db "INSERT INTO artifacts (session_id, member, title, type) VALUES (?, ?, ?, ?)"
-                             [(:id session) member title type*]))
-            (when (and (= "collecting" (:status session)) (= (inc n) slots))
-              (js-await (q-run db "UPDATE sessions SET status = 'scheduling' WHERE id = ?"
-                               [(:id session)])))
+            (js-await (q-run db "INSERT INTO artifacts (session_id, member, title, type, guest) VALUES (?, ?, ?, ?, ?)"
+                             [(:id session) member title type* guest]))
             (redirect url token)))))))
 
 (defn ^:async post-artifact-delete [req env url member token]
@@ -747,11 +769,6 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
       (do
         (js-await (q-run db "DELETE FROM artifacts WHERE id = ? AND member = ? AND session_id = ?"
                          [id member (:id session)]))
-        (let [n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
-                                       [(:id session)]))]
-          (when (< (:n n-row) slots)
-            (js-await (q-run db "UPDATE sessions SET status = 'collecting' WHERE id = ?"
-                             [(:id session)]))))
         (redirect url token)))))
 
 (defn ^:async post-dates [req env url member token]
@@ -827,11 +844,9 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
         session (js-await (current-session db))]
     (if (not= "scheduled" (:status session))
       (redirect url token "phase")
-      (let [n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
-                                     [(:id session)]))
-            status (if (>= (:n n-row) slots) "scheduling" "collecting")]
-        (js-await (q-run db "UPDATE sessions SET status = ?, locked_date = NULL WHERE id = ?"
-                         [status (:id session)]))
+      (do
+        (js-await (q-run db "UPDATE sessions SET status = 'collecting', locked_date = NULL WHERE id = ?"
+                         [(:id session)]))
         (redirect url token)))))
 
 (defn ^:async post-host
@@ -862,12 +877,6 @@ footer { margin-top: 4.5rem; text-align: center; color: var(--faint); font-size:
                      [(:id session) member]))
     (js-await (q-run db "UPDATE sessions SET host = NULL WHERE id = ? AND host = ?"
                      [(:id session) member]))
-    (when (= "scheduling" (:status session))
-      (let [n-row (js-await (q-first db "SELECT COUNT(*) AS n FROM artifacts WHERE session_id = ?"
-                                     [(:id session)]))]
-        (when (< (:n n-row) slots)
-          (js-await (q-run db "UPDATE sessions SET status = 'collecting' WHERE id = ?"
-                           [(:id session)])))))
     (redirect url token)))
 
 (defn ^:async post-absence-delete
