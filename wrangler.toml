@@ -1,9 +1,5 @@
 name = "tmi"
-main = "src/index.mjs"
 compatibility_date = "2026-07-01"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "tmi"
-database_id = "274cd485-850d-4fbf-bfe5-ac7e9f46908c"
-migrations_dir = "migrations"
+[assets]
+directory = "public"
