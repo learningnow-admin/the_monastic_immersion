@@ -1,6 +1,6 @@
 # The Monastic Immersion
 
-*Not a book. Not a club. Bookclub.*
+*Not a book. Not a club. Book club.*
 
 A static page listing each session's date and the things shared. Nothing to
 log in to, nothing to vote on.
@@ -8,13 +8,12 @@ log in to, nothing to vote on.
 ## Recording a session
 
 Edit `sessions.md`. One `##` line per session (newest first), then one `-`
-line per thing, written as `Title — who brought it`. Any other line under a
-heading becomes a note (where it was, who hosted, a guest's name).
+line per thing, written as `Title (type)`. Any other line under a heading
+becomes a note.
 
 ```md
 ## 18 September 2026
-At Nina's.
-- Scopa (game) — Cass
+- Scopa (game)
 ```
 
 Push to `main` and the GitHub Action rebuilds and deploys. You can do this
