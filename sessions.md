@@ -7,7 +7,7 @@ as "Title (type)". Anything else under a heading is a note.
 - Claire Keegan on Conversations, the last ten minutes (podcast)
 - Sheetali breathing (demonstration)
 - Joy and woe are woven fine, William Blake (poem)
-- Frugal hedonism
+- Frugal hedonism (book)
 - Samora Machel and Mozambique
 
 ## 18 September 2026
