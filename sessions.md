@@ -8,7 +8,7 @@ as "Title (type)". Anything else under a heading is a note.
 - Sheetali breathing (demonstration)
 - Joy and woe are woven fine, William Blake (poem)
 - Frugal hedonism (book)
-- Samora Machel and Mozambique
+- Samora Machel and Mozambique (person & society)
 
 ## 18 September 2026
 - The Future of Remote Blue Dot Communities, Noel Pearson at Garma Festival, August 2026 (video)
