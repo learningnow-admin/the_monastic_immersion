@@ -1,5 +1,10 @@
 name = "tmi"
 compatibility_date = "2026-07-01"
+workers_dev = true
+
+routes = [
+  { pattern = "tmi.learningnow.com.au", custom_domain = true }
+]
 
 [assets]
 directory = "public"

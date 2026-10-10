@@ -3,7 +3,7 @@
 *Not a book. Not a club. Book club.*
 
 A static page that lists each session's date and the things shared.
-Live at https://tmi.solitary-lab-0d7b.workers.dev
+Live at https://tmi.learningnow.com.au
 
 The whole site is one text file, `sessions.md`. Edit it, push it, done.
 
