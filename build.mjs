@@ -100,7 +100,7 @@ footer { margin-top: 4rem; text-align: center; color: var(--rubric); letter-spac
 <main>
   <div class="hedera" aria-hidden="true">❧</div>
   <h1>The Monastic Immersion</h1>
-  <p class="subtitle">Not a book. Not a club.</p>
+  <p class="subtitle">Not a book. Not a club. Bookclub.</p>
 ${sessionHtml}
   <footer aria-hidden="true">❧</footer>
 </main>

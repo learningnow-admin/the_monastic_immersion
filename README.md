@@ -1,6 +1,6 @@
 # The Monastic Immersion
 
-*Not a book. Not a club.*
+*Not a book. Not a club. Bookclub.*
 
 A static page listing each session's date and the things shared. Nothing to
 log in to, nothing to vote on.
